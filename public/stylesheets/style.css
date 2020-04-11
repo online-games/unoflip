@@ -1,0 +1,171 @@
+a {
+  color: #00b7ff;
+}
+
+.c_center {
+  text-align: center;
+}
+
+div.c {
+  text-transform: capitalize;
+}
+
+.titleblock{
+  width : 100%;
+  background-color: #333333;
+}
+
+.title {
+  font-size: 36px;
+  font-weight: 600;
+  color:white;
+  padding-left:30px;
+  padding-top:60px;
+  padding-bottom:20px;
+}
+
+.statustext{
+  font-size: 36px;
+  font-weight: 600;	
+  color:black;
+}
+
+.blinking{
+  font-size: 36px;
+  font-weight: 600;	
+  animation:blinkingText 1.2s infinite;
+}
+@keyframes blinkingText{
+    0%{     color: #000;    }
+    49%{    color: #000; }
+    60%{    color: transparent; }
+    99%{    color:transparent;  }
+    100%{   color: #000;    }
+}
+
+.decorative-red{
+  height: 10px;
+  width: 25%;
+  background-color: #f56462;
+}
+.decorative-green{
+  height: 10px;
+  width: 25%;
+  background-color: #2fe29b;
+}
+.decorative-blue{
+  height: 10px;
+  width: 25%;
+  background-color: #00c3e5;
+}
+.decorative-yellow{
+  height: 10px;
+  width: 25%;
+  background-color: #f7e359;
+}
+
+.main{
+ padding : 30px;
+}
+
+.btn {
+  background-color: #dddddd;
+  color: black;
+  margin: 5px 0 5px 0;
+  font-size: 14px;
+}
+
+.blue_but {
+  background-color: #00c3e5;
+  color: white;
+} /* Blue */
+.red_but {
+  background-color: #f56462;
+  color: white;
+} /* Red */
+.green_but {
+  background-color: #2fe29a;
+  color: white;
+} /* Green */
+.yellow_but {
+  background-color: #f7e359;
+} /* Yellow */
+
+.gamebuttons {
+  margin-bottom: 15px;
+}
+
+.gamestats {
+  display:flex;
+  flex-direction: row;
+}
+
+.statlabel{
+  font-size: 14px;
+  color: black;
+
+}
+
+.stattext{
+  color: #777777;
+  padding-top: 3px;
+  text-transform: capitalize;
+}
+
+.gscol1{
+  width: 50%;
+}
+.gscol2{
+  width: 40%;
+}
+.gscol3{
+  width: 60%;
+}
+
+.sectiontitle {
+  border-bottom: 1px solid #9e9e9e;
+  height: 2rem;
+  margin: 15px 0 8px 0;
+  line-height: 1.15;
+  font-size: 16px;
+}
+
+.yourturnbut{
+  position: absolute;
+  left: 30px;
+  width: 100px;
+  height:140px;
+  color: #dddddd;
+  margin: 0;
+  z-index: 0;
+}
+
+.discard{
+  height: 150px;
+}
+
+.discardTop{
+  position: absolute;
+  z-index: 1;
+}
+
+.c_isUno{
+  background-color: #f56462;
+}
+
+.r_isTurn{
+  background-color: #2fe29b;
+}
+
+.c_isWinner{
+  background-color: #f7e359;
+}
+
+.cards{
+  margin-right: -10px;
+}
+
+.pile-cards{
+  margin-right: -99.5px;
+  z-index: 2;
+}

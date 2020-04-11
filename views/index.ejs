@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/2.3.0/socket.io.js"></script>
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.4.1/jquery.min.js"></script>
+<script type="module" src="https://cdn.jsdelivr.net/npm/js-cookie@rc/dist/js.cookie.min.mjs"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/css/materialize.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"></script>
+
+<script type="module">
+  import Cookies from 'https://cdn.jsdelivr.net/npm/js-cookie@rc/dist/js.cookie.min.mjs'
+  //get uuid, store a new hash if one does not exist
+  //the uuid is used to identify a returning player
+  console.log(`Cookie = ${Cookies.get('uuid')}`);
+  if (Cookies.get('uuid') == null) {
+    Cookies.set('uuid', Math.random());
+  }
+  var uuid = Cookies.get('uuid');
+  var playerCount = 5;
+  var playedWild = '';
+  var playerdata = [];
+
+
+  var debugEnabled = false;
+  debugEnabled = getUrlParameter('debug');
+  console.log(debugEnabled);
+
+  function getUrlParameter(sParam) {
+    var sPageURL = window.location.search.substring(1),
+      sURLVariables = sPageURL.split('&'),
+      sParameterName,
+      i;
+
+    for (i = 0; i < sURLVariables.length; i++) {
+      sParameterName = sURLVariables[i].split('=');
+
+      if (sParameterName[0] === sParam) {
+        return sParameterName[1] === undefined ? true : decodeURIComponent(sParameterName[1]);
+      }
+    }
+  };
+
+
+
+
+  //open socket
+  var socket = io();
+  socket.on('connect', () => {
+    //on socket connection
+    console.log(socket.connected);
+    socket.emit('register', uuid);
+
+    //misc buttons
+    $("#deal_but").click(function () {
+      socket.emit('deal', uuid);
+    });
+    $("#pick_but").click(function () {
+      socket.emit('pickup', uuid);
+    });
+    $("#uno_but").click(function () {
+      socket.emit('uno', uuid);
+    });
+    $("#sortmyhand").click(function () {
+      socket.emit('sort', uuid);
+    });
+    $("#challenge_but").click(function () {
+      socket.emit('challenge', uuid);
+    });
+    $("#drawCard_but").click(function () {
+      socket.emit('drawCard', uuid);
+    });
+    $("#reset_but").click(function () {
+      socket.emit('reset', uuid);
+    });
+    $("#lockplayers_but").click(function () {
+      socket.emit('lockplayers', uuid);
+    });
+
+    $("#uno1_but").click(function () {
+      socket.emit('uno7', uuid);
+    });
+
+
+    //wildcard selections
+    $("#red_but").click(function () {
+      socket.emit('playcard', { uuid: uuid, card: playedWild, wildColour: 'red' });
+      $("#colours").hide();
+    });
+    $("#blue_but").click(function () {
+      socket.emit('playcard', { uuid: uuid, card: playedWild, wildColour: 'blue' });
+      $("#colours").hide();
+    });
+    $("#green_but").click(function () {
+      socket.emit('playcard', { uuid: uuid, card: playedWild, wildColour: 'green' });
+      $("#colours").hide();
+    });
+    $("#yellow_but").click(function () {
+      socket.emit('playcard', { uuid: uuid, card: playedWild, wildColour: 'yellow' });
+      $("#colours").hide();
+    });
+
+    //name change
+    $("#playerName").change(function () {
+      console.log('namechange')
+      socket.emit('namechange', { uuid: uuid, name: $("#playerName").val() });
+    });
+
+    //update state of misc items
+    socket.on('state', data => {
+      let discardTop = data.discardTop;
+      let pileCount = data.pileCount;
+      let discardCount = data.discardCount;
+      let slapdownCount = data.slapdownCount;
+      let drawAmount = data.drawAmount;
+      let playerNext = data.playerNext;
+      let dealerNext = data.dealerNext;
+      playerCount = data.playerCount;
+      let inProgress = data.inProgress;
+      let resetEnabled = data.resetEnabled;
+      let challengeEnabled = data.challengeEnabled;
+      let drawEnabled = data.drawEnabled;
+      let currentColour = data.currentColour;
+      let reverseDirection = data.reverseDirection;
+      let playerdata = data.playerdata;
+
+      $("#playerNext").text(playerNext);
+      $("#dealerNext").text(dealerNext);
+      $("#discardCount").text(discardCount);
+      $("#slapdownCount").text(slapdownCount);
+      $("#drawAmount").text(drawAmount);
+      $("#currentColour").text(currentColour);
+      $("#reverseDirection").text(reverseDirection);
+      $("#pileCount").text(pileCount);
+      $("#playerCount").text(playerCount);
+
+      console.log(data);
+
+      //update discard pile
+      $("#discardTop").empty();
+      data.discard.forEach(discards => {
+        let card = $('<img/>',
+          {
+            src: discards,
+            width: '100px',
+            class: "pile-cards z-depth-2"
+          });
+        $("#discardTop").append(card);
+      })
+
+      //update pickup pile
+      $("#pickup").empty();
+      for (let pileindex = 0; pileindex < pileCount; pileindex++) {
+        let card = $('<img/>',
+          {
+            src: 'card_back_large.png',
+            width: '100px',
+            class: "pile-cards",
+            click: function () {
+              socket.emit('pickupanddraw', uuid);
+            }
+          });
+        $("#pickup").append(card);
+      };
+
+      //show challenge buttons
+      if (challengeEnabled && (playerNext == $("#playerName").val())) {
+        $("#challenge").show();
+      } else {
+        $("#challenge").hide();
+      }
+      //only allow reset if debug
+      if (debugEnabled == 'true' || (resetEnabled)) {
+        $("#resetbut").show();
+        $("#killtable").show();
+        $("#lockplayers").show();
+      } else {
+        $("#resetbut").hide();
+        $("#killtable").hide();
+        $("#lockplayers").hide();
+      }
+      //show Your Deal text
+      if (inProgress) {
+        $("#unotable").show();
+        $("#uno_but").show();
+        $("#yourdeal").hide();
+        $("#deal_but").hide();
+        $("#currentcolour").show();
+        //Reverse Direction
+        if (reverseDirection) {
+          $("#clockwise").hide();
+          $("#anticlockwise").show();
+        } else {
+          $("#clockwise").show();
+          $("#anticlockwise").hide();
+        }
+        //show Your Turn text
+        if (playerNext == $("#playerName").val()) {
+          $("#yourturn").show();
+          $("#yourpickup").show();
+          $("#uno0_but").show();
+          $("#uno1_but").show();
+          $("#uno2_but").show();
+          $("discardTop").addClass('pulse');
+          if (!drawEnabled) {
+            $("#pick_but").show();
+          } else {
+            $("#pick_but").hide();
+          }
+        } else {
+          $("discardTop").removeClass('pulse');
+          $("#pick_but").hide();
+          $("#yourturn").hide();
+          $("#yourpickup").hide();
+          $("#uno0_but").hide();
+          $("#uno1_but").hide();
+          $("#uno2_but").hide();
+        }
+        //show drawCard buttons
+        if (drawEnabled && (playerNext == $("#playerName").val())) {
+          $("#drawCard").show();
+          $("#drawCardtext").show();
+          $("#pick_but").hide();
+        } else {
+          $("#drawCard").hide();
+          $("#drawCardtext").hide();
+        }
+        //sdynamic show uno buttons
+
+        /*
+        
+                if ((playerNext == $("#playerName").val())) {
+                  for (let i = 0; i < playerCount; i++) {
+              
+                  let testt = "uno" + i + "_but";
+              if (i == playernext){
+                  $(testt).show();
+                } else{
+                  $(testt).hide();
+              	
+                }
+              	
+              }
+                } else {
+                  for (let i = 0; i < playerCount; i++) {
+              
+                  let testt = "uno" + i + "_but";
+              if (i == playernext){
+                  $(testt).hide();
+                } else{
+                  $(testt).hide();
+              	
+                }
+                }
+            }
+        
+            */
+      } else {
+        $("#unotable").hide();
+        $("#uno_but").hide();
+        $("#challenge").hide();
+        $("#drawCardtext").hide();
+        $("#drawCard").hide();
+        $("#pick_but").hide();
+        $("#currentcolour").hide();
+        $("#yourturn").hide();
+        $("#yourpickup").hide();
+        if ((dealerNext == $("#playerName").val()) && (!resetEnabled)) {
+          $("#yourdeal").show();
+          $("#deal_but").show();
+        } else {
+          $("#yourdeal").hide();
+          $("#deal_but").hide();
+        }
+      }
+
+      //handle 1st card colour choice for wild
+      let topCard = discardTop || '';
+      if (playerNext == $("#playerName").val() && discardTop.includes('wild') && currentColour == ' ') {
+
+        playedWild = 'deal';
+        $("#colours").show();
+      }
+
+      for (let i = 0; i < playerCount; i++) {
+        if ($("#playerName").val() == playerdata[i].name) {
+			
+          let thisstatus = playerdata[i].status;
+		  if (playerdata[i].blink) {
+		  
+			$("#blinkingstatusdata").show();
+			$("#blinkingstatusdata").text(thisstatus);
+			$("#statusdata").hide();
+		  
+		  } else {
+		  
+			$("#statusdata").show();
+			$("#statusdata").text(thisstatus);
+			$("#blinkingstatusdata").hide();
+        
+		  }
+		}
+      }
+
+
+      //clear playertable
+      $('#playertable').empty();
+      //add title row
+      $('#playertable').append(`<tr><th >Player name</th><th class='c_center'>Cards in hand</th><th  class='c_center'>Wins</th><th  class='c_center'>Last Round</th><th  class='c_center'>Score</th></tr>`);
+      //dyanmically add the other players
+      for (let i = 0; i < playerCount; i++) {
+        $('#playertable').append(`<tr id="playerrow${i}"><th>${playerdata[i].name}</th><th id="cardscell${i}" class='c_center'>${playerdata[i].cardsInHand}</th><th id="winscell${i}" class='c_center'>${playerdata[i].wins}</th><th class='c_center'>${playerdata[i].lastRound}</th><th class='c_center'>${playerdata[i].score}</th></tr>`);
+      }
+      //clear playertable
+      $('#unotable').empty();
+      //dyanmically add the other players
+      for (let i = 0; i < playerCount; i++) {
+        let catchbutton;
+        catchbutton = $('<button/>',
+          {
+            text: "Catch " + playerdata[i].name,
+            class: "btn",
+            id: "catch" + i + "_but",
+            click: function () {
+              socket.emit('catch', { i, uuid });
+
+            }
+          });
+        $('#unotable').append(catchbutton, `  `);
+
+      }
+	  
+      //clear killtable
+      $('#killtable').empty();
+      //dyanmically add the other players
+      for (let i = 0; i < playerCount; i++) {
+        let killbutton;
+        killbutton = $('<button/>',
+          {
+            text: "Kill " + playerdata[i].name,
+            class: "btn",
+            id: "kill" + i + "_but",
+            click: function () {
+              socket.emit('kill', { i, uuid });
+
+            }
+          });
+        $('#killtable').append(killbutton, `  `);
+
+      }
+
+      //highlight rows of playertable
+      playerdata.forEach((player, playerindex) => {
+        if (player.isTurn) {
+          $(`#playerrow${playerindex}`).addClass('r_isTurn');
+          $(`#playerrow${playerindex}`).addClass('z-depth-1');
+        } else {
+          $(`#playerrow${playerindex}`).removeClass('r_isTurn');
+          $(`#playerrow${playerindex}`).removeClass('z-depth-1');
+
+        }
+        if (player.isUno) {
+          $(`#cardscell${playerindex}`).addClass('c_isUno');
+
+        } else {
+          $(`#cardscell${playerindex}`).removeClass('c_isUno');
+        }
+        if (player.isWinner) {
+          $(`#winscell${playerindex}`).addClass('c_isWinner');
+
+        } else {
+          $(`#winscell${playerindex}`).removeClass('c_isWinner');
+        }
+
+
+
+      });
+
+
+    });
+
+    //log message
+    socket.on('message', text => {
+      //add to log
+      $("#messages").prepend(`<br />${text}`)
+    });
+
+    //force refresh
+    socket.on('refresh', text => {
+      location.reload();
+    });
+
+    socket.on('rechooseColour', () => {
+      playedWild = 'challenge';
+      $("#colours").show();
+    });
+	
+    socket.on('newchooseColour', () => {
+      playedWild = 'colourchoice';	
+      $("#colours").show();
+    });
+
+    //player status is sent to a socket named as the player's uuid
+    socket.on(uuid, player => {
+      console.log(player);
+      $("#hand").empty();
+      $("#playerName").val(player.name);
+
+      if (player.isSortable) {
+        $("#sortmyhand").show();
+      } else {
+        $("#sortmyhand").hide();
+      }
+
+      //add each card to the hand
+      let card;
+      jQuery.each(player.hand, (card) => {
+        //we create a card like this so we can attach some logic to it
+        card = $('<img/>',
+          {
+            src: player.hand[card],
+            width: '100px',
+            class: 'cards z-depth-2',
+            click: function () {
+              console.log(`played ${jQuery(this).text()}`);
+              if (jQuery(this).attr('src').includes('wild')) {
+                playedWild = jQuery(this).attr('src');
+				socket.emit('playcard', { uuid: uuid, card: jQuery(this).attr('src') });
+              } else {
+                socket.emit('playcard', { uuid: uuid, card: jQuery(this).attr('src') });
+              }
+            }
+          });
+        $("#hand").append(card);
+      });
+    });
+
+
+  });
+
+</script>
+
+
+<head>
+  <title>
+    UNO
+  </title>
+  <link rel='stylesheet' href='/stylesheets/style.css' />
+</head>
+
+<body>
+  <div class='titleblock z-depth-3'>
+    <div class='title'>
+      UNO Game
+    </div>
+    <div style="display:flex;">
+      <div class='decorative-red'></div>
+      <div class='decorative-green'></div>
+      <div class='decorative-blue'></div>
+      <div class='decorative-yellow'></div>
+    </div>
+  </div>
+  <div class='main'>
+    <div class="stattext">Your Name</br>
+      <input type="text" id="playerName">
+    </div>
+    <div class='gamestats'>
+      <div class='gscol3'>
+	
+	
+	
+    <div class='gamestats'>
+
+      <div class='gscol1'>
+        <div class="stattext">Number of Players</br>
+          <label class="statlabel" id="playerCount"></label>
+        </div>
+        <div class="stattext">This Turn</br>
+          <label class="statlabel" id="playerNext"></label>
+        </div>
+        <div hidden="true" id="clockwise" class="stattext">Play Direction</br>
+          <label class="statlabel">Clockwise</label>
+        </div>
+        <div hidden="true" id="anticlockwise" class="stattext">Play Direction</br>
+          <label class="statlabel">Anti-Clockwise</label>
+        </div>
+      </div>
+      <div class='gscol1'>
+        <div class="stattext">Cards in Pile</br>
+          <label class="statlabel" id="pileCount"></label>
+        </div>
+        <div class="stattext">Cards in Discard Pile</br>
+          <label class="statlabel" id="discardCount"></label>
+        </div>
+        <div hidden="true" id="currentcolour" class="stattext">Current Colour</br>
+          <label class="statlabel c" id="currentColour"></label>
+        </div>
+      </div>
+    </div>
+    <div class='textarea sectiontitle'>The Pile</div>
+
+    <div class='gamestats'>
+      <div class='gscol1'>
+        <div style='display:flex'>
+          <div style='width: 150px'>
+            <div id="discard" class="discard">
+              <div id="discardTop" class="discardTop"></div>
+            </div>
+          </div>
+          <div id='yourturn' class="btn yourturnbut pulse">Your Turn</div>
+          <div id="pickup" class="pile-cards">
+          </div>
+
+        </div>
+      </div>
+      <div class='gscol1'>
+        <div>
+          <label hidden="true" class="statustext" id="statusdata"></label><label hidden="true" class="blinking" id="blinkingstatusdata"></div>
+
+      </div>
+    </div>
+    <div hidden="true" id="colours">
+      <button class="btn blue_but" id="blue_but">Blue</button>
+      <button class="btn green_but" id="green_but">Green</button>
+      <button class="btn red_but" id="red_but">Red</button>
+      <button class="btn yellow_but" id="yellow_but">Yellow</button>
+    </div>
+    <div hidden="true" id="challenge">
+      <button class="btn" id="challenge_but">Challenge</button>
+    </div>
+    <div hidden="true" id="drawCardtext" class="stattext">Draw Cards</br><label class="statlabel" id="drawAmount">
+    </div>
+    <!--div hidden="true" id="drawCard">
+      <button class="btn pulse" id="drawCard_but">Draw</button>
+    </div-->
+
+    <div class='textarea sectiontitle'>Your Hand</div>
+
+    <div id="hand">
+
+    </div>
+    <div class='gamebuttons'>
+      <button class="btn pulse" id="deal_but">Deal</button>
+      <!--button class="btn" id="pick_but" hidden="true">Pick-up</button-->
+      <button class="btn" id="sortmyhand" hidden="true">Sort hand</button>
+      <button class="btn" id="uno_but" hidden="true">Uno</button>
+      <div class='gamebuttons' id="unotable"></div>
+	  <div hidden="true" class='gamebuttons' id="killtable"></div>
+	  <div hidden="true" id="resetbut"><button class="btn" id="reset_but">Reset Game</button></div>
+	  <div hidden="true" id="lockplayers"><button class="btn" id="lockplayers_but">Lock Players</button></div>
+    </div>
+    <div class='textarea sectiontitle'>Scores</div>
+    <div>
+      <table id="playertable"></table>
+    </div>
+	    </div>
+      
+	<div class='gscol2>
+		<div class='textarea sectiontitle'>Log</div>
+    <div id="messages">
+
+    </div>
+	    </div>
+	
+		    </div>
+  </div>
+</body>
+
+</html>
