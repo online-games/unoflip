@@ -35,12 +35,18 @@ router.get('/', function (req, res, next) {
 
 
 
+//create darkdeck
+var darkdeck;
+glob("./public/dark/*", function (er, files) {
+  darkdeck = files;
+  darkdeck.forEach((card, index, array) => array[index] = card.replace(`/public`, ``));
+})
+
 //create deck
-var deck = []; //['🂡', '🂢', '🂣', '🂤', '🂥', '🂦', '🂧', '🂨', '🂩', '🂪', '🂫', '🂭', '🂮', '🂱', '🂲', '🂳', '🂴', '🂵', '🂶', '🂷', '🂸', '🂹', '🂺', '🂻', '🂽', '🂾', '🃁', '🃂', '🃃', '🃄', '🃅', '🃆', '🃇', '🃈', '🃉', '🃊', '🃋', '🃍', '🃎', '🃑', '🃒', '🃓', '🃔', '🃕', '🃖', '🃗', '🃘', '🃙', '🃚', '🃛', '🃝', '🃞', '🂿', '🃟'];
+var deck;
 glob("./public/cards/*", function (er, files) {
   deck = files;
   deck.forEach((card, index, array) => array[index] = card.replace(`/public`, ``));
-  //console.log(deck);
 })
 
 //globals for tracking state
@@ -50,12 +56,18 @@ var tempplayers = [];
 var tempplayerdata = [];
 var discard = [];
 var pile = [];
+var darkpile = [];
+var temppile = [];
+var temphand = [];
 var turn = 0;
 var dontWaitUp = null;
 var dontWaitUpCard = '';
 var reverseDirection = false;
 var dealer = 0;
 var inProgress = false;
+var roundOver = false;
+var darkdraw = false;
+var darkdrawcolour = '';
 var challengeEnabled = false;
 var drawEnabled = false;
 var drawAmount = 0;
@@ -67,9 +79,11 @@ var lowestValue = 1000;
 var highestValue = 0;
 var winner = '';
 var loser = '';
+var newWild = false;
 var resetEnabled;
 var skippedPlayer;
 var skip;
+var skipAll;
 var reverseCard;
 var slapdownCard;
 var turnCounter;
@@ -78,6 +92,7 @@ var killmessage = '';
 var endmessage = '';
 var lockPlayers = false;
 var unlucky;
+var dark = false;
 
 //open a socket
 io.on('connection', function (socket) {
@@ -157,7 +172,20 @@ io.on('connection', function (socket) {
       message(`${uuidToName(uuid)} - said Uno!`);
       playerdata[playerIndex].uno = true;
       updateState();
+	  
     }
+	 let pickupCard = pile.pop();
+      players[turn].hand.push(pickupCard);
+      updateState();
+	 //pile.pop();
+	 
+	   //add card to discard
+ // discard.push(card);
+  //remove from hand
+ // players[playerIndex].hand = players[playerIndex].hand.filter((item) => { return item !== card });
+  
+  
+	 	
   });
   socket.on('catch', function (data) {
     console.log(data);
@@ -248,9 +276,12 @@ io.on('connection', function (socket) {
       drawAmount = 0;
       drawEnabled = false;
       challengeEnabled = false;
+      darkdraw = false;
+	  darkdrawcolour = '';
       reverseCard = false;
 	  slapdownCard = false;
       skip = false;
+      skipAll = false;
       turnCounter++;
       playerdata[turn].uno = false;
       playerdata[turn].unotime = null;
@@ -270,6 +301,8 @@ io.on('connection', function (socket) {
         dontWaitUp = uuid;
         dontWaitUpCard = pickupCard;
         challengeEnabled = false; // Turn off challenge of wild if someone picks up.
+        darkdraw = false;
+	    darkdrawcolour = '';
         playerdata[turn].uno = false;
         playerdata[turn].unotime = null;
         reverseCard = false;
@@ -277,6 +310,7 @@ io.on('connection', function (socket) {
 		killmessage = '';
 		endmessage = '';
         skip = false;
+        skipAll = false;
         turnCounter++;
         checkPile();
         nextTurn(false);
@@ -299,6 +333,8 @@ io.on('connection', function (socket) {
       dontWaitUp = uuid;
       dontWaitUpCard = pickupCard;
       challengeEnabled = false; // Turn off challenge of wild if someone picks up.
+      darkdraw = false;
+	  darkdrawcolour = '';
       playerdata[turn].uno = false;
       playerdata[turn].unotime = null;
       checkPile();
@@ -316,7 +352,7 @@ io.on('connection', function (socket) {
     let card = data.card;
 		
     
-    if (card == 'challenge' || card == 'deal') {
+    if (card == 'challenge' || card == 'deal' || card == 'newWild') {
 	  wildColour = data.wildColour;
       message(`${uuidToName(uuid)} - Wild colour has been set to ${wildColour}`)
       //is this called?
@@ -325,6 +361,7 @@ io.on('connection', function (socket) {
 		  nextTurn();
 		  unlucky = false;
 	  }	  
+	  newWild = false;
       updateState();
     } else {
 
@@ -338,7 +375,7 @@ io.on('connection', function (socket) {
 		playedCard = card;
 		playCard(card, uuid, null, socket);	
 		  
-	  } else if ((card.includes('colourchoice')) && (playedCard != '')) {
+	  } else if (((card.includes('colourchoice')) || (card.includes('darkcolourchoice'))) && (playedCard != '')) {
         message(`${uuidToName(uuid)} - chose a colour`);
 		wildColour = data.wildColour;
 		
@@ -347,16 +384,65 @@ io.on('connection', function (socket) {
 		prevCurrentColour = currentColour;
 		currentColour = wildColour;
 		
-		  //draw four
-		  if (playedCard.includes('wild_pick')) {
-			drawAmount = 4;
+		  if (playedCard.includes('wild_dark_pick')) {
+			  
+			  if(!roundOver) {
+				  
+				  darkdraw = true;
+				  darkdrawcolour = wildColour;
+				  drawAmount = 1;
+				  for(whileIndex = 0; whileIndex < pile.length; whileIndex++)
+				  {
+					  let card = pile.slice((whileIndex*-1) - 1)[0];
+					  let colour = cardColour(card);
+					  if (colour != wildColour) {				
+						  drawAmount++;
+					  } else {
+						  break;
+					  }
+				  }
+				  
+				drawEnabled = true;
+			  } else {
+				  
+				  drawAmount = 1;
+				  for(whileIndex = 0; whileIndex < pile.length; whileIndex++)
+				  {
+					  let card = pile.slice((whileIndex*-1) - 1)[0];
+					  let colour = cardColour(card);
+					  if (colour != wildColour) {				
+						  drawAmount++;
+					  } else {
+						  break;
+					  }
+				  }
+				  
+  		          let drawIndex = nextPlayer(turn, reverseDirection);
+				  for (let draws = 0; draws < drawAmount; draws++) {
+					players[drawIndex].hand.push(pile.pop());
+					checkPile();
+				  }
+							  
+				  checkWin(playerIndex, card, false);
+				  roundOver = false;
+			  }
+				  
+			  
+		  }
+		  else if (playedCard.includes('wild_pick')) {
+			drawAmount = 2;
 			drawEnabled = true;
 		  }
-				
-		playedCard = '';
-		nextTurn();
-		updateState();
 		  
+		  
+		if (inProgress) { 
+				
+			playedCard = '';
+			nextTurn();
+			updateState();
+
+		}
+		
 	  } else {
 		playCard(card, uuid, wildColour, null);		  
 	  }
@@ -389,30 +475,39 @@ io.on('connection', function (socket) {
         checkPile();
         playerdata[previousPlayerIndex].uno = false;
         playerdata[previousPlayerIndex].unotime = null;
+	  }	else if (discard.slice(-1).pop().includes('wild_dark_pick')) {
+		for(let cardIndex = 0; cardIndex < drawAmount; cardIndex++)
+		{
+			players[turn].hand.push(pile.pop());
+			checkPile();
+        }
+		playerdata[turn].uno = false;
+        playerdata[turn].unotime = null;
       }
 
       //this player now chooses the colour
-      socket.emit('rechooseColour');
-
+	  if(playedCard.includes('wild_dark')) {
+		socket.emit('rechoosedarkColour');
+	  } else {
+		socket.emit('rechooseColour');
+	  }
+	  
     } else {
       message(`challenge failed`);
       players[turn].hand.push(pile.pop());
       checkPile();
       players[turn].hand.push(pile.pop());
       checkPile();
-      if (discard.slice(-1).pop().includes('picker')) {
-        players[turn].hand.push(pile.pop());
-        checkPile();
-        players[turn].hand.push(pile.pop());
-        checkPile();
-        playerdata[turn].uno = false;
+      if (discard.slice(-1).pop().includes('wild_dark_pick')) {
+        for(let cardIndex = 0; cardIndex < drawAmount; cardIndex++)
+		{
+			players[turn].hand.push(pile.pop());
+			checkPile();
+        }
+		playerdata[turn].uno = false;
         playerdata[turn].unotime = null;
       }
       else if (discard.slice(-1).pop().includes('wild_pick')) {
-        players[turn].hand.push(pile.pop());
-        checkPile();
-        players[turn].hand.push(pile.pop());
-        checkPile();
         players[turn].hand.push(pile.pop());
         checkPile();
         players[turn].hand.push(pile.pop());
@@ -423,8 +518,11 @@ io.on('connection', function (socket) {
 
     }
     challengeEnabled = false;
+    darkdraw = false;
+	darkdrawcolour = '';
     drawAmount = 0;
     drawEnabled = false;
+	playedCard = '';
     dontWaitUp = null;
     dontWaitUpCard = '';
     playerdata[turn].cardsInHand = players[turn].hand.length;
@@ -448,6 +546,8 @@ io.on('connection', function (socket) {
     drawAmount = 0;
     drawEnabled = false;
     challengeEnabled = false;
+    darkdraw = false;
+	darkdrawcolour = '';
     dontWaitUp = null;
     dontWaitUpCard = '';
     nextTurn(false);
@@ -580,6 +680,8 @@ function deal() {
   discard = [];
   //get the deck from the pile
   pile = [...deck]
+  //get the darkdeck from the darkpile
+  darkpile = [...darkdeck]
   //randomly sort
   pile.sort(() => Math.random() - 0.5);
   //deal
@@ -612,8 +714,8 @@ function deal() {
   if (topCard.includes('wild_pick')) {
 	let unluckyplayer = nextPlayer(turn, reverseDirection);
 	unlucky = true;
-    message(`${playerdata[unluckyplayer].name} got dealt a Draw 4! Unlucky! They'll choose the colour.`);
-	for (let cardIndex = 0; cardIndex < 4; cardIndex++) {
+    message(`${playerdata[unluckyplayer].name} got dealt a Draw 2! Unlucky! They'll choose the colour.`);
+	for (let cardIndex = 0; cardIndex < 2; cardIndex++) {
 		  players[unluckyplayer].hand.push(pile.pop());
 		}
 		players[unluckyplayer].hand.sort();
@@ -622,6 +724,7 @@ function deal() {
 
   //skip
   skip = false;
+  skipAll = false;
   if (topCard.includes('skip')) {
     skip = true;
     skippedPlayer = nextPlayer(turn, reverseDirection);
@@ -640,6 +743,11 @@ function deal() {
   
  for (let thisPlayer = 0; thisPlayer < players.length; thisPlayer++) {
 	  playerdata[thisPlayer].blink = false;
+  }
+  
+  
+  if (topCard.includes('flip')) {
+	  flip();
   }
   
   nextTurn(skip);
@@ -687,14 +795,36 @@ function updateState() {
 				  playerdata[playerindex].status = killmessage + '. Your turn!';				
 			} 
 		  	else if (drawEnabled) {
-			    if (challengeEnabled) {
-			  	  playerdata[playerindex].status = 'Pick Up ' + drawAmount + ' cards, or challenge!';
+			    if (darkdraw) {
+					if((darkdrawcolour == 'orange') || (darkdrawcolour == 'Orange'))
+					{
+						playerdata[playerindex].status = 'Pick Up until you draw an ' + darkdrawcolour + ' card, or challenge!';	
+						
+					} else {
+						playerdata[playerindex].status = 'Pick Up until you draw a ' + darkdrawcolour + ' card, or challenge!';							
+					}		
+			    } else if (challengeEnabled) {
+					if (drawAmount == 1) {
+						playerdata[playerindex].status = 'Pick Up ' + drawAmount + ' card, or challenge!';
+					} else {
+						playerdata[playerindex].status = 'Pick Up ' + drawAmount + ' cards, or challenge!';						
+					}
+					
 			    } else {
 				  if (slapdownCard) {
-				    playerdata[playerindex].status = 'Slapdown! Pick up ' + drawAmount + ' cards!';
+					  if(drawAmount == 1) {
+							playerdata[playerindex].status = 'Slapdown! Pick up ' + drawAmount + ' card!';
+					  } else {
+							playerdata[playerindex].status = 'Slapdown! Pick up ' + drawAmount + ' cards!';						  
+					  }
 
 				  } else {
-				    playerdata[playerindex].status = 'Pick up ' + drawAmount + ' cards!';
+					  if(drawAmount == 1) {
+							playerdata[playerindex].status = 'Pick up ' + drawAmount + ' card!';								
+					  } else {
+							playerdata[playerindex].status = 'Pick up ' + drawAmount + ' cards!';
+						  
+					  }
 				  }
 			    }
 			}
@@ -727,7 +857,7 @@ function updateState() {
 			//Not your turn
 			if (killmessage != ''){
 				playerdata[playerindex].status = killmessage + '!';				
-			} else if ((skip) && (playerindex == skippedPlayer)) {
+			} else if (((skip) && (playerindex == skippedPlayer)) || (skipAll)) {
 				playerdata[playerindex].status = 'You got skipped!';
 			} else if (reverseCard) {
 				if (slapdownCard) {
@@ -736,10 +866,24 @@ function updateState() {
 				playerdata[playerindex].status = 'Reverse!';
 				}
 			} else if (drawEnabled) {
-				if(challengeEnabled){
-					playerdata[playerindex].status = playerdata[turn].name + ' has to pick up ' + drawAmount + ' cards, or challenge!';
+				if(darkdraw){
+					if((darkdrawcolour == 'orange') || (darkdrawcolour == 'Orange')) {						
+						playerdata[playerindex].status = playerdata[turn].name + ' has to pick up until they draw an ' + darkdrawcolour + ' card, or challenge!';	
+					} else {
+						playerdata[playerindex].status = playerdata[turn].name + ' has to pick up until they draw a ' + darkdrawcolour + ' card, or challenge!';	
+					}					
+				} else if(challengeEnabled){
+					if(drawAmount == 1) {
+							playerdata[playerindex].status = playerdata[turn].name + ' has to pick up ' + drawAmount + ' card, or challenge!';						
+					} else {
+							playerdata[playerindex].status = playerdata[turn].name + ' has to pick up ' + drawAmount + ' cards, or challenge!';						
+					}
 				} else {
-					playerdata[playerindex].status = playerdata[turn].name + ' has to pick up ' + drawAmount + ' cards!';					
+					if(drawAmount == 1) {
+							playerdata[playerindex].status = playerdata[turn].name + ' has to pick up ' + drawAmount + ' card!';							
+					} else {
+							playerdata[playerindex].status = playerdata[turn].name + ' has to pick up ' + drawAmount + ' cards!';							
+					}				
 				}				
 			}
 			else {
@@ -793,10 +937,13 @@ function updateState() {
     drawAmount,
     drawEnabled,
     wildColour,
+    darkdraw,
+	newWild,
     reverseDirection,
     currentColour,
     playerdata,
-    resetEnabled
+    resetEnabled,
+	dark
   });
 }
 
@@ -880,8 +1027,8 @@ function playCard(card, uuid, wildColour = null, socket) {
     message(`${uuidToName(uuid)} - a ${cardColour(card)} ${cardNumber(card)} cannot be played on a ${cardColour(discard.slice(-1).pop())} ${cardNumber(discard.slice(-1).pop())}`);
     return false;
   }
-
-
+  
+  let newcard = cardswap(card);
   turn = playerIndex;
   dontWaitUp = null;
   dontWaitUpCard = '';
@@ -892,17 +1039,30 @@ function playCard(card, uuid, wildColour = null, socket) {
 
   //draw two
   if (card.includes('picker')) {
-    drawAmount = drawAmount + 2;
+	if (card.includes('dark')) {	  
+    drawAmount = drawAmount + 5;
+	} else {
+    drawAmount = drawAmount + 1;
+		
+	}
     drawEnabled = true;
   }
 
   //skip
   skip = false;
+  skipAll = false;
   if (card.includes('skip')) {
-    skip = true;
-    skippedPlayer = nextPlayer(turn, reverseDirection);
-    message(`${uuidToName(uuid)} skipped  ${playerdata[skippedPlayer].name}`);
-  }
+	  
+	if (card.includes('dark')) {
+		skipAll = true;
+		message(`${uuidToName(uuid)} skipped everyone`);
+	} 
+	else {
+		skip = true;
+		skippedPlayer = nextPlayer(turn, reverseDirection);
+		message(`${uuidToName(uuid)} skipped  ${playerdata[skippedPlayer].name}`);
+	}
+	}
 
 
 
@@ -912,6 +1072,10 @@ function playCard(card, uuid, wildColour = null, socket) {
     reverseDirection = !reverseDirection;
     reverseCard = true;
   }
+  
+  
+
+  
 
   if (!card.includes('wild')) {
     currentColour = cardColour(card);
@@ -924,19 +1088,66 @@ function playCard(card, uuid, wildColour = null, socket) {
   //remove from hand
   players[playerIndex].hand = players[playerIndex].hand.filter((item) => { return item !== card });
   
+  checkPile();
+  
+    //flip
+  if (card.includes('flip')) {
+	flip();  
+  }
+  
+  
     //wild choose colour
-  if ((card.includes('wild')) && (players[playerIndex].hand.length != 0)) {
-	  socket.emit('newchooseColour');
+  if ((card.includes('wild')) && ((players[playerIndex].hand.length != 0)) || (card.includes('wild_dark_pick'))) {
+	  if (card.includes('wild_dark'))
+	  {
+		  socket.emit('newchoosedarkColour');
+	  }
+	  else 
+	  {		  
+		  socket.emit('newchooseColour');
+	  }
   } else {
     challengeEnabled = false;
+    darkdraw = false;
+	darkdrawcolour = '';
   }  
 
+  let gameComplete = checkWin(playerIndex, card, true);
+  if (gameComplete) {
+	  return true;
+  }
+ 
+  //Check if now in Uno
+  if (players[playerIndex].hand.length == 1) {
+    playerdata[playerIndex].unotime = turnCounter;
+  }
+
+  if ((!card.includes('wild')) && (!skipAll)) {
+    nextTurn(skip);
+  }
+  
+  updateState();
+  
+
+  
+  return true;
+}
+
+function checkWin(playerIndex, card, beforeChoice) {
+	
   //check for win
   if (players[playerIndex].hand.length == 0) {
 	  
 	if (card.includes('wild_pick')) {
-		drawAmount = 4;
+		drawAmount = 2;
 		drawEnabled = true;
+	} else if ((card.includes('wild_dark_pick')) && beforeChoice) {
+		//TODO
+		drawAmount = 0;
+		drawEnabled = true;
+		roundOver = true;
+		updateState();
+		return true;
 	}
 	  
     message(`${uuidToName(uuid)} won the round`);
@@ -951,6 +1162,8 @@ function playCard(card, uuid, wildColour = null, socket) {
     //cancel all interim states
     drawAmount = 0;
     drawEnabled = false;
+    darkdraw = false;
+	darkdrawcolour = '';
     challengeEnabled = false;
 
     inProgress = false;
@@ -985,31 +1198,17 @@ function playCard(card, uuid, wildColour = null, socket) {
       return true;
     }
 
-
-
-  }
-  //Check if now in Uno
-  if (players[playerIndex].hand.length == 1) {
-    playerdata[playerIndex].unotime = turnCounter;
-  }
-
-  if (!card.includes('wild')) {
-    nextTurn(skip);
   }
   
-  updateState();
-  
-
-  
-  return true;
+  return false;
 }
 
 //check if the card is playable
 function isPlayable(card) {
   //same colour, number or is a wild
   let topCard = discard.slice(-1).pop() || ' ';
-  let cardsets = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'picker', 'skip', 'reverse'];
-  let colours = ['yellow', 'blue', 'red', 'green'];
+  let cardsets = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'picker', 'skip', 'reverse', 'flip'];
+  let colours = ['yellow', 'blue', 'red', 'green', 'pink', 'purple', 'teal', 'orange'];
   let valid = false;
   if (drawEnabled) {
     valid = valid || (topCard.includes('picker') && card.includes('picker'));
@@ -1029,8 +1228,8 @@ function isPlayable(card) {
 function isSlapdown(card) {
   //same colour and number 
   let topCard = discard.slice(-1).pop() || ' ';
-  let cardsets = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'picker', 'skip', 'reverse'];
-  let colours = ['yellow', 'blue', 'red', 'green'];
+  let cardsets = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'picker', 'skip', 'reverse', 'flip'];
+  let colours = ['yellow', 'blue', 'red', 'green', 'pink', 'purple', 'teal', 'orange'];
   let slap = false;
   colours.forEach(colour => {
     cardsets.forEach(cardset => {
@@ -1134,6 +1333,10 @@ function cardColour(card, capitalise = false) {
   if (card.includes('blue')) return 'blue';
   if (card.includes('yellow')) return 'yellow';
   if (card.includes('green')) return 'green';
+  if (card.includes('purple')) return 'purple';
+  if (card.includes('pink')) return 'pink';
+  if (card.includes('teal')) return 'teal';
+  if (card.includes('orange')) return 'orange';
   return '';
 }
 
@@ -1149,6 +1352,8 @@ function reset() {
   dealer = 0;
   inProgress = false;
   challengeEnabled = false;
+  darkdraw = false;
+  darkdrawcolour = '';
   drawEnabled = false;
   slapdownCounter = 0;
   drawAmount = 0;
@@ -1171,11 +1376,21 @@ function cardNumber(card) {
   if (card.includes('7')) return 'seven';
   if (card.includes('8')) return 'eight';
   if (card.includes('9')) return 'nine';
-  if (card.includes('picker')) return 'draw two';
   if (card.includes('reverse')) return 'reverse';
-  if (card.includes('skip')) return 'skip';
+  if (card.includes('flip')) return 'flip';
   if (card.includes('colora')) return 'wild';
-  if (card.includes('pick_four')) return 'wild draw four';
+  if (card.includes('dark'))
+  {
+	  if (card.includes('picker')) return 'draw five';
+	  if (card.includes('skip')) return 'skip all';
+	  if (card.includes('pick_colour')) return 'wild draw colour';
+  }
+  else 
+  {
+	  if (card.includes('picker')) return 'draw one';
+	  if (card.includes('skip')) return 'skip';
+	  if (card.includes('pick_four')) return 'wild draw two';	  
+  }
 }
 
 //count the number of clicks and restrict if too many
@@ -1200,6 +1415,297 @@ function clickPolice(uuid, timeout_ms = 5000, limit = 5) {
   if (clickCounter[uuid].length > limit) return true;
 
   return false;
+}
+
+function flip(){
+	
+	dark = !dark;
+	message(`The deck got flipped!`);
+	temppile = [];
+
+	for (let playerIndex = 0; playerIndex < players.length; playerIndex++)
+	{
+		temphand = [];
+		for (let cardIndex = 0; cardIndex < players[playerIndex].hand.length; cardIndex++)
+			
+		{
+			let card = players[playerIndex].hand[cardIndex];
+			let newcard = cardswap(card);			
+			temphand.push(newcard);
+
+		}
+		players[playerIndex].hand = temphand; 
+	}
+	let originallength = discard.length;
+	for (let cardIndex = 0; cardIndex < originallength; cardIndex++)
+		
+	{
+		let card = discard.pop();
+		let newcard = cardswap(card);
+		
+		temppile.push(newcard);
+
+	}
+	
+	
+	discard = temppile;
+	temppile = [];
+	originallength = pile.length;	
+	for (let cardIndex = 0; cardIndex < originallength; cardIndex++)
+		
+	{
+		let card = pile.pop();
+		let newcard = cardswap(card);
+		
+		temppile.push(newcard);
+		//darkpile = darkpile.filter((item) => { return item !== newcard });
+
+	}
+	pile = temppile;
+	
+	for(let playerIndex = 0; playerIndex < players.length; playerIndex++)
+	{
+		players[playerIndex].hand.sort();
+	}
+	
+	let discardTop = discard.slice(-1).pop();
+	currentColour = cardColour(discardTop);
+	
+	if(discardTop.includes('wild')){
+		newWild = true;
+	}
+	
+}
+
+function cardswap(card){
+	let newcard = '';
+	if(card.includes('./cards/blue_1_large - Copy.png'))  newcard = './dark/purple_skip_large - Copy.png';
+	else if(card.includes('./cards/blue_1_large - First.png'))  newcard = './dark/purple_skip_large - First.png';
+	else if(card.includes('./cards/blue_2_large - Copy.png'))  newcard = './dark/pink_6_large - First.png';
+	else if(card.includes('./cards/blue_2_large - First.png'))  newcard = './dark/orange_8_large - First.png';
+	else if(card.includes('./cards/blue_3_large - Copy.png'))  newcard = './dark/purple_8_large - Copy.png';
+	else if(card.includes('./cards/blue_3_large - First.png'))  newcard = './dark/teal_2_large - First.png';
+	else if(card.includes('./cards/blue_4_large - Copy.png'))  newcard = './dark/purple_1_large - First.png';
+	else if(card.includes('./cards/blue_4_large - First.png'))  newcard = './dark/teal_picker_large - First.png';
+	else if(card.includes('./cards/blue_5_large - Copy.png'))  newcard = './dark/pink_9_large - First.png';
+	else if(card.includes('./cards/blue_5_large - First.png'))  newcard = './dark/orange_reverse_large - Copy.png';
+	else if(card.includes('./cards/blue_6_large - Copy.png'))  newcard = './dark/purple_reverse_large - Copy.png';
+	else if(card.includes('./cards/blue_6_large - First.png'))  newcard = './dark/teal_skip_large - First.png';
+	else if(card.includes('./cards/blue_7_large - Copy.png'))  newcard = './dark/orange_3_large - Copy.png';
+	else if(card.includes('./cards/blue_7_large - First.png'))  newcard = './dark/orange_skip_large - First.png';
+	else if(card.includes('./cards/blue_8_large - Copy.png'))  newcard = './dark/teal_reverse_large - Copy.png';
+	else if(card.includes('./cards/blue_8_large - First.png'))  newcard = './dark/teal_4_large - Copy.png';
+	else if(card.includes('./cards/blue_9_large - Copy.png'))  newcard = './dark/orange_5_large - First.png';
+	else if(card.includes('./cards/blue_9_large - First.png'))  newcard = './dark/purple_flip_large - First.png';
+	else if(card.includes('./cards/blue_flip_large - Copy.png'))  newcard = './dark/purple_6_large - First.png';
+	else if(card.includes('./cards/blue_flip_large - First.png'))  newcard = './dark/purple_7_large - First.png';
+	else if(card.includes('./cards/blue_picker_large - Copy.png'))  newcard = './dark/pink_6_large - Copy.png';
+	else if(card.includes('./cards/blue_picker_large - First.png'))  newcard = './dark/teal_6_large - Copy.png';
+	else if(card.includes('./cards/blue_reverse_large - Copy.png'))  newcard = './dark/orange_4_large - First.png';
+	else if(card.includes('./cards/blue_reverse_large - First.png'))  newcard = './dark/wild_dark_colora_changer_large - Copy one.png';
+	else if(card.includes('./cards/blue_skip_large - Copy.png'))  newcard = './dark/teal_1_large - First.png';
+	else if(card.includes('./cards/blue_skip_large - First.png'))  newcard = './dark/pink_9_large - Copy.png';
+	else if(card.includes('./cards/green_1_large - Copy.png'))  newcard = './dark/orange_5_large - Copy.png';
+	else if(card.includes('./cards/green_1_large - First.png'))  newcard = './dark/orange_flip_large - Copy.png';
+	else if(card.includes('./cards/green_2_large - Copy.png'))  newcard = './dark/teal_skip_large - Copy.png';
+	else if(card.includes('./cards/green_2_large - First.png'))  newcard = './dark/teal_picker_large - Copy.png';
+	else if(card.includes('./cards/green_3_large - Copy.png'))  newcard = './dark/purple_2_large - First.png';
+	else if(card.includes('./cards/green_3_large - First.png'))  newcard = './dark/pink_flip_large - First.png';
+	else if(card.includes('./cards/green_4_large - Copy.png'))  newcard = './dark/pink_8_large - First.png';
+	else if(card.includes('./cards/green_4_large - First.png'))  newcard = './dark/teal_9_large - Copy.png';
+	else if(card.includes('./cards/green_5_large - Copy.png'))  newcard = './dark/teal_4_large - First.png';
+	else if(card.includes('./cards/green_5_large - First.png'))  newcard = './dark/orange_7_large - Copy.png';
+	else if(card.includes('./cards/green_6_large - Copy.png'))  newcard = './dark/pink_5_large - Copy.png';
+	else if(card.includes('./cards/green_6_large - First.png'))  newcard = './dark/wild_dark_pick_colour_large - Copy one.png';
+	else if(card.includes('./cards/green_7_large - Copy.png'))  newcard = './dark/orange_6_large - First.png';
+	else if(card.includes('./cards/green_7_large - First.png'))  newcard = './dark/teal_2_large - Copy.png';
+	else if(card.includes('./cards/green_8_large - Copy.png'))  newcard = './dark/pink_reverse_large - First.png';
+	else if(card.includes('./cards/green_8_large - First.png'))  newcard = './dark/teal_9_large - First.png';
+	else if(card.includes('./cards/green_9_large - Copy.png'))  newcard = './dark/pink_reverse_large - Copy.png';
+	else if(card.includes('./cards/green_9_large - First.png'))  newcard = './dark/orange_picker_large - First.png';
+	else if(card.includes('./cards/green_flip_large - Copy.png'))  newcard = './dark/wild_dark_pick_colour_large - Copy two.png';
+	else if(card.includes('./cards/green_flip_large - First.png'))  newcard = './dark/teal_3_large - First.png';
+	else if(card.includes('./cards/green_picker_large - Copy.png'))  newcard = './dark/orange_6_large - Copy.png';
+	else if(card.includes('./cards/green_picker_large - First.png'))  newcard = './dark/teal_6_large - First.png';
+	else if(card.includes('./cards/green_reverse_large - Copy.png'))  newcard = './dark/orange_1_large - Copy.png';
+	else if(card.includes('./cards/green_reverse_large - First.png'))  newcard = './dark/pink_7_large - Copy.png';
+	else if(card.includes('./cards/green_skip_large - Copy.png'))  newcard = './dark/orange_9_large - Copy.png';
+	else if(card.includes('./cards/green_skip_large - First.png'))  newcard = './dark/purple_4_large - First.png';
+	else if(card.includes('./cards/red_1_large - Copy.png'))  newcard = './dark/pink_3_large - Copy.png';
+	else if(card.includes('./cards/red_1_large - First.png'))  newcard = './dark/purple_2_large - Copy.png';
+	else if(card.includes('./cards/red_2_large - Copy.png'))  newcard = './dark/purple_picker_large - Copy.png';
+	else if(card.includes('./cards/red_2_large - First.png'))  newcard = './dark/orange_reverse_large - First.png';
+	else if(card.includes('./cards/red_3_large - Copy.png'))  newcard = './dark/pink_7_large - First.png';
+	else if(card.includes('./cards/red_3_large - First.png'))  newcard = './dark/wild_dark_pick_colour_large - First.png';
+	else if(card.includes('./cards/red_4_large - Copy.png'))  newcard = './dark/purple_picker_large - First.png';
+	else if(card.includes('./cards/red_4_large - First.png'))  newcard = './dark/orange_flip_large - First.png';
+	else if(card.includes('./cards/red_5_large - Copy.png'))  newcard = './dark/teal_5_large - Copy.png';
+	else if(card.includes('./cards/red_5_large - First.png'))  newcard = './dark/pink_2_large - First.png';
+	else if(card.includes('./cards/red_6_large - Copy.png'))  newcard = './dark/pink_skip_large - First.png';
+	else if(card.includes('./cards/red_6_large - First.png'))  newcard = './dark/orange_9_large - First.png';
+	else if(card.includes('./cards/red_7_large - Copy.png'))  newcard = './dark/orange_1_large - First.png';
+	else if(card.includes('./cards/red_7_large - First.png'))  newcard = './dark/purple_5_large - Copy.png';
+	else if(card.includes('./cards/red_8_large - Copy.png'))  newcard = './dark/purple_reverse_large - First.png';
+	else if(card.includes('./cards/red_8_large - First.png'))  newcard = './dark/teal_7_large - First.png';
+	else if(card.includes('./cards/red_9_large - Copy.png'))  newcard = './dark/teal_reverse_large - First.png';
+	else if(card.includes('./cards/red_9_large - First.png'))  newcard = './dark/purple_5_large - First.png';
+	else if(card.includes('./cards/red_flip_large - Copy.png'))  newcard = './dark/purple_3_large - First.png';
+	else if(card.includes('./cards/red_flip_large - First.png'))  newcard = './dark/pink_8_large - Copy.png';
+	else if(card.includes('./cards/red_picker_large - Copy.png'))  newcard = './dark/pink_4_large - Copy.png';
+	else if(card.includes('./cards/red_picker_large - First.png'))  newcard = './dark/pink_3_large - First.png';
+	else if(card.includes('./cards/red_reverse_large - Copy.png'))  newcard = './dark/purple_3_large - Copy.png';
+	else if(card.includes('./cards/red_reverse_large - First.png'))  newcard = './dark/teal_7_large - Copy.png';
+	else if(card.includes('./cards/red_skip_large - Copy.png'))  newcard = './dark/wild_dark_colora_changer_large - Copy three.png';
+	else if(card.includes('./cards/red_skip_large - First.png'))  newcard = './dark/orange_picker_large - Copy.png';
+	else if(card.includes('./cards/yellow_1_large - Copy.png'))  newcard = './dark/pink_skip_large - Copy.png';
+	else if(card.includes('./cards/yellow_1_large - First.png'))  newcard = './dark/wild_dark_colora_changer_large - Copy two.png';
+	else if(card.includes('./cards/yellow_2_large - Copy.png'))  newcard = './dark/teal_1_large - Copy.png';
+	else if(card.includes('./cards/yellow_2_large - First.png'))  newcard = './dark/teal_8_large - First.png';
+	else if(card.includes('./cards/yellow_3_large - Copy.png'))  newcard = './dark/purple_1_large - Copy.png';
+	else if(card.includes('./cards/yellow_3_large - First.png'))  newcard = './dark/pink_picker_large - First.png';
+	else if(card.includes('./cards/yellow_4_large - Copy.png'))  newcard = './dark/purple_flip_large - Copy.png';
+	else if(card.includes('./cards/yellow_4_large - First.png'))  newcard = './dark/pink_picker_large - Copy.png';
+	else if(card.includes('./cards/yellow_5_large - Copy.png'))  newcard = './dark/teal_8_large - Copy.png';
+	else if(card.includes('./cards/yellow_5_large - First.png'))  newcard = './dark/purple_9_large - First.png';
+	else if(card.includes('./cards/yellow_6_large - Copy.png'))  newcard = './dark/wild_dark_pick_colour_large - Copy three.png';
+	else if(card.includes('./cards/yellow_6_large - First.png'))  newcard = './dark/orange_skip_large - Copy.png';
+	else if(card.includes('./cards/yellow_7_large - Copy.png'))  newcard = './dark/orange_2_large - Copy.png';
+	else if(card.includes('./cards/yellow_7_large - First.png'))  newcard = './dark/purple_6_large - Copy.png';
+	else if(card.includes('./cards/yellow_8_large - Copy.png'))  newcard = './dark/pink_1_large - First.png';
+	else if(card.includes('./cards/yellow_8_large - First.png'))  newcard = './dark/orange_2_large - First.png';
+	else if(card.includes('./cards/yellow_9_large - Copy.png'))  newcard = './dark/purple_4_large - Copy.png';
+	else if(card.includes('./cards/yellow_9_large - First.png'))  newcard = './dark/teal_5_large - First.png';
+	else if(card.includes('./cards/yellow_flip_large - Copy.png'))  newcard = './dark/pink_4_large - First.png';
+	else if(card.includes('./cards/yellow_flip_large - First.png'))  newcard = './dark/orange_8_large - Copy.png';
+	else if(card.includes('./cards/yellow_picker_large - Copy.png'))  newcard = './dark/pink_1_large - Copy.png';
+	else if(card.includes('./cards/yellow_picker_large - First.png'))  newcard = './dark/purple_8_large - First.png';
+	else if(card.includes('./cards/yellow_reverse_large - Copy.png'))  newcard = './dark/teal_flip_large - Copy.png';
+	else if(card.includes('./cards/yellow_reverse_large - First.png'))  newcard = './dark/wild_dark_colora_changer_large - First.png';
+	else if(card.includes('./cards/yellow_skip_large - Copy.png'))  newcard = './dark/orange_3_large - First.png';
+	else if(card.includes('./cards/yellow_skip_large - First.png'))  newcard = './dark/teal_flip_large - First.png';
+	else if(card.includes('./cards/wild_colora_changer_large - Copy three.png'))  newcard = './dark/purple_7_large - Copy.png';
+	else if(card.includes('./cards/wild_colora_changer_large - Copy two.png'))  newcard = './dark/pink_5_large - First.png';
+	else if(card.includes('./cards/wild_colora_changer_large - Copy one.png'))  newcard = './dark/teal_3_large - Copy.png';
+	else if(card.includes('./cards/wild_colora_changer_large - First.png'))  newcard = './dark/pink_flip_large - Copy.png';
+	else if(card.includes('./cards/wild_pick_four_large - Copy three.png'))  newcard = './dark/purple_9_large - Copy.png';
+	else if(card.includes('./cards/wild_pick_four_large - Copy two.png'))  newcard = './dark/orange_7_large - First.png';
+	else if(card.includes('./cards/wild_pick_four_large - Copy one.png'))  newcard = './dark/orange_4_large - Copy.png';
+	else if(card.includes('./cards/wild_pick_four_large - First.png'))  newcard = './dark/pink_2_large - Copy.png';
+	else if(card.includes('./dark/purple_skip_large - Copy.png')) newcard = './cards/blue_1_large - Copy.png';
+	else if(card.includes('./dark/purple_skip_large - First.png')) newcard = './cards/blue_1_large - First.png';
+	else if(card.includes('./dark/pink_6_large - First.png')) newcard = './cards/blue_2_large - Copy.png';
+	else if(card.includes('./dark/orange_8_large - First.png')) newcard = './cards/./cards/blue_2_large - First.png';
+	else if(card.includes('./dark/purple_8_large - Copy.png')) newcard = './cards/blue_3_large - Copy.png';
+	else if(card.includes('./dark/teal_2_large - First.png')) newcard = './cards/blue_3_large - First.png';
+	else if(card.includes('./dark/purple_1_large - First.png')) newcard = './cards/blue_4_large - Copy.png';
+	else if(card.includes('./dark/teal_picker_large - First.png')) newcard = './cards/blue_4_large - First.png';
+	else if(card.includes('./dark/pink_9_large - First.png')) newcard = './cards/blue_5_large - Copy.png';
+	else if(card.includes('./dark/orange_reverse_large - Copy.png')) newcard = './cards/blue_5_large - First.png';
+	else if(card.includes('./dark/purple_reverse_large - Copy.png')) newcard = './cards/blue_6_large - Copy.png';
+	else if(card.includes('./dark/teal_skip_large - First.png')) newcard = './cards/blue_6_large - First.png';
+	else if(card.includes('./dark/orange_3_large - Copy.png')) newcard = './cards/blue_7_large - Copy.png';
+	else if(card.includes('./dark/orange_skip_large - First.png')) newcard = './cards/blue_7_large - First.png';
+	else if(card.includes('./dark/teal_reverse_large - Copy.png')) newcard = './cards/blue_8_large - Copy.png';
+	else if(card.includes('./dark/teal_4_large - Copy.png')) newcard = './cards/blue_8_large - First.png';
+	else if(card.includes('./dark/orange_5_large - First.png')) newcard = './cards/blue_9_large - Copy.png';
+	else if(card.includes('./dark/purple_flip_large - First.png')) newcard = './cards/blue_9_large - First.png';
+	else if(card.includes('./dark/purple_6_large - First.png')) newcard = './cards/blue_flip_large - Copy.png';
+	else if(card.includes('./dark/purple_7_large - First.png')) newcard = './cards/blue_flip_large - First.png';
+	else if(card.includes('./dark/pink_6_large - Copy.png')) newcard = './cards/blue_picker_large - Copy.png';
+	else if(card.includes('./dark/teal_6_large - Copy.png')) newcard = './cards/blue_picker_large - First.png';
+	else if(card.includes('./dark/orange_4_large - First.png')) newcard = './cards/blue_reverse_large - Copy.png';
+	else if(card.includes('./dark/wild_dark_colora_changer_large - Copy one.png')) newcard = './cards/blue_reverse_large - First.png';
+	else if(card.includes('./dark/teal_1_large - First.png')) newcard = './cards/blue_skip_large - Copy.png';
+	else if(card.includes('./dark/pink_9_large - Copy.png')) newcard = './cards/blue_skip_large - First.png';
+	else if(card.includes('./dark/orange_5_large - Copy.png')) newcard = './cards/green_1_large - Copy.png';
+	else if(card.includes('./dark/orange_flip_large - Copy.png')) newcard = './cards/green_1_large - First.png';
+	else if(card.includes('./dark/teal_skip_large - Copy.png')) newcard = './cards/green_2_large - Copy.png';
+	else if(card.includes('./dark/teal_picker_large - Copy.png')) newcard = './cards/green_2_large - First.png';
+	else if(card.includes('./dark/purple_2_large - First.png')) newcard = './cards/green_3_large - Copy.png';
+	else if(card.includes('./dark/pink_flip_large - First.png')) newcard = './cards/green_3_large - First.png';
+	else if(card.includes('./dark/pink_8_large - First.png')) newcard = './cards/green_4_large - Copy.png';
+	else if(card.includes('./dark/teal_9_large - Copy.png')) newcard = './cards/green_4_large - First.png';
+	else if(card.includes('./dark/teal_4_large - First.png')) newcard = './cards/green_5_large - Copy.png';
+	else if(card.includes('./dark/orange_7_large - Copy.png')) newcard = './cards/green_5_large - First.png';
+	else if(card.includes('./dark/pink_5_large - Copy.png')) newcard = './cards/green_6_large - Copy.png';
+	else if(card.includes('./dark/wild_dark_pick_colour_large - Copy one.png')) newcard = './cards/green_6_large - First.png';
+	else if(card.includes('./dark/orange_6_large - First.png')) newcard = './cards/green_7_large - Copy.png';
+	else if(card.includes('./dark/teal_2_large - Copy.png')) newcard = './cards/green_7_large - First.png';
+	else if(card.includes('./dark/pink_reverse_large - First.png')) newcard = './cards/green_8_large - Copy.png';
+	else if(card.includes('./dark/teal_9_large - First.png')) newcard = './cards/green_8_large - First.png';
+	else if(card.includes('./dark/pink_reverse_large - Copy.png')) newcard = './cards/green_9_large - Copy.png';
+	else if(card.includes('./dark/orange_picker_large - First.png')) newcard = './cards/green_9_large - First.png';
+	else if(card.includes('./dark/wild_dark_pick_colour_large - Copy two.png')) newcard = './cards/green_flip_large - Copy.png';
+	else if(card.includes('./dark/teal_3_large - First.png')) newcard = './cards/green_flip_large - First.png';
+	else if(card.includes('./dark/orange_6_large - Copy.png')) newcard = './cards/green_picker_large - Copy.png';
+	else if(card.includes('./dark/teal_6_large - First.png')) newcard = './cards/green_picker_large - First.png';
+	else if(card.includes('./dark/orange_1_large - Copy.png')) newcard = './cards/green_reverse_large - Copy.png';
+	else if(card.includes('./dark/pink_7_large - Copy.png')) newcard = './cards/green_reverse_large - First.png';
+	else if(card.includes('./dark/orange_9_large - Copy.png')) newcard = './cards/green_skip_large - Copy.png';
+	else if(card.includes('./dark/purple_4_large - First.png')) newcard = './cards/green_skip_large - First.png';
+	else if(card.includes('./dark/pink_3_large - Copy.png')) newcard = './cards/red_1_large - Copy.png';
+	else if(card.includes('./dark/purple_2_large - Copy.png')) newcard = './cards/red_1_large - First.png';
+	else if(card.includes('./dark/purple_picker_large - Copy.png')) newcard = './cards/red_2_large - Copy.png';
+	else if(card.includes('./dark/orange_reverse_large - First.png')) newcard = './cards/red_2_large - First.png';
+	else if(card.includes('./dark/pink_7_large - First.png')) newcard = './cards/red_3_large - Copy.png';
+	else if(card.includes('./dark/wild_dark_pick_colour_large - First.png')) newcard = './cards/red_3_large - First.png';
+	else if(card.includes('./dark/purple_picker_large - First.png')) newcard = './cards/red_4_large - Copy.png';
+	else if(card.includes('./dark/orange_flip_large - First.png')) newcard = './cards/red_4_large - First.png';
+	else if(card.includes('./dark/teal_5_large - Copy.png')) newcard = './cards/red_5_large - Copy.png';
+	else if(card.includes('./dark/pink_2_large - First.png')) newcard = './cards/red_5_large - First.png';
+	else if(card.includes('./dark/pink_skip_large - First.png')) newcard = './cards/red_6_large - Copy.png';
+	else if(card.includes('./dark/orange_9_large - First.png')) newcard = './cards/red_6_large - First.png';
+	else if(card.includes('./dark/orange_1_large - First.png')) newcard = './cards/red_7_large - Copy.png';
+	else if(card.includes('./dark/purple_5_large - Copy.png')) newcard = './cards/red_7_large - First.png';
+	else if(card.includes('./dark/purple_reverse_large - First.png')) newcard = './cards/red_8_large - Copy.png';
+	else if(card.includes('./dark/teal_7_large - First.png')) newcard = './cards/red_8_large - First.png';
+	else if(card.includes('./dark/teal_reverse_large - First.png')) newcard = './cards/red_9_large - Copy.png';
+	else if(card.includes('./dark/purple_5_large - First.png')) newcard = './cards/red_9_large - First.png';
+	else if(card.includes('./dark/purple_3_large - First.png')) newcard = './cards/red_flip_large - Copy.png';
+	else if(card.includes('./dark/pink_8_large - Copy.png')) newcard = './cards/red_flip_large - First.png';
+	else if(card.includes('./dark/pink_4_large - Copy.png')) newcard = './cards/red_picker_large - Copy.png';
+	else if(card.includes('./dark/pink_3_large - First.png')) newcard = './cards/red_picker_large - First.png';
+	else if(card.includes('./dark/purple_3_large - Copy.png')) newcard = './cards/red_reverse_large - Copy.png';
+	else if(card.includes('./dark/teal_7_large - Copy.png')) newcard = './cards/red_reverse_large - First.png';
+	else if(card.includes('./dark/wild_dark_colora_changer_large - Copy three.png')) newcard = './cards/red_skip_large - Copy.png';
+	else if(card.includes('./dark/orange_picker_large - Copy.png')) newcard = './cards/red_skip_large - First.png';
+	else if(card.includes('./dark/pink_skip_large - Copy.png')) newcard = './cards/yellow_1_large - Copy.png';
+	else if(card.includes('./dark/wild_dark_colora_changer_large - Copy two.png')) newcard = './cards/yellow_1_large - First.png';
+	else if(card.includes('./dark/teal_1_large - Copy.png')) newcard = './cards/yellow_2_large - Copy.png';
+	else if(card.includes('./dark/teal_8_large - First.png')) newcard = './cards/yellow_2_large - First.png';
+	else if(card.includes('./dark/purple_1_large - Copy.png')) newcard = './cards/yellow_3_large - Copy.png';
+	else if(card.includes('./dark/pink_picker_large - First.png')) newcard = './cards/yellow_3_large - First.png';
+	else if(card.includes('./dark/purple_flip_large - Copy.png')) newcard = './cards/yellow_4_large - Copy.png';
+	else if(card.includes('./dark/pink_picker_large - Copy.png')) newcard = './cards/yellow_4_large - First.png';
+	else if(card.includes('./dark/teal_8_large - Copy.png')) newcard = './cards/yellow_5_large - Copy.png';
+	else if(card.includes('./dark/purple_9_large - First.png')) newcard = './cards/yellow_5_large - First.png';
+	else if(card.includes('./dark/wild_dark_pick_colour_large - Copy three.png')) newcard = './cards/yellow_6_large - Copy.png';
+	else if(card.includes('./dark/orange_skip_large - Copy.png')) newcard = './cards/yellow_6_large - First.png';
+	else if(card.includes('./dark/orange_2_large - Copy.png')) newcard = './cards/yellow_7_large - Copy.png';
+	else if(card.includes('./dark/purple_6_large - Copy.png')) newcard = './cards/yellow_7_large - First.png';
+	else if(card.includes('./dark/pink_1_large - First.png')) newcard = './cards/yellow_8_large - Copy.png';
+	else if(card.includes('./dark/orange_2_large - First.png')) newcard = './cards/yellow_8_large - First.png';
+	else if(card.includes('./dark/purple_4_large - Copy.png')) newcard = './cards/yellow_9_large - Copy.png';
+	else if(card.includes('./dark/teal_5_large - First.png')) newcard = './cards/yellow_9_large - First.png';
+	else if(card.includes('./dark/pink_4_large - First.png')) newcard = './cards/yellow_flip_large - Copy.png';
+	else if(card.includes('./dark/orange_8_large - Copy.png')) newcard = './cards/yellow_flip_large - First.png';
+	else if(card.includes('./dark/pink_1_large - Copy.png')) newcard = './cards/yellow_picker_large - Copy.png';
+	else if(card.includes('./dark/purple_8_large - First.png')) newcard = './cards/yellow_picker_large - First.png';
+	else if(card.includes('./dark/teal_flip_large - Copy.png')) newcard = './cards/yellow_reverse_large - Copy.png';
+	else if(card.includes('./dark/wild_dark_colora_changer_large - First.png')) newcard = './cards/yellow_reverse_large - First.png';
+	else if(card.includes('./dark/orange_3_large - First.png')) newcard = './cards/yellow_skip_large - Copy.png';
+	else if(card.includes('./dark/teal_flip_large - First.png')) newcard = './cards/yellow_skip_large - First.png';
+	else if(card.includes('./dark/purple_7_large - Copy.png')) newcard = './cards/wild_colora_changer_large - Copy three.png';
+	else if(card.includes('./dark/pink_5_large - First.png')) newcard = './cards/wild_colora_changer_large - Copy two.png';
+	else if(card.includes('./dark/teal_3_large - Copy.png')) newcard = './cards/wild_colora_changer_large - Copy one.png';
+	else if(card.includes('./dark/pink_flip_large - Copy.png')) newcard = './cards/wild_colora_changer_large - First.png';
+	else if(card.includes('./dark/purple_9_large - Copy.png')) newcard = './cards/wild_pick_four_large - Copy three.png';
+	else if(card.includes('./dark/orange_7_large - First.png')) newcard = './cards/wild_pick_four_large - Copy two.png';
+	else if(card.includes('./dark/orange_4_large - Copy.png')) newcard = './cards/wild_pick_four_large - Copy one.png';
+	else if(card.includes('./dark/pink_2_large - Copy.png')) newcard = './cards/wild_pick_four_large - First.png';
+	else newcard = 'Not found';
+	
+	return newcard;
 }
 
 module.exports = app;

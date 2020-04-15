@@ -51,7 +51,7 @@ div.c {
 .decorative-green{
   height: 10px;
   width: 25%;
-  background-color: #2fe29b;
+  background-color: #43e647;
 }
 .decorative-blue{
   height: 10px;
@@ -62,6 +62,27 @@ div.c {
   height: 10px;
   width: 25%;
   background-color: #f7e359;
+}
+
+.decorative-teal{
+  height: 10px;
+  width: 25%;
+  background-color: #099e6d;
+}
+.decorative-pink{
+  height: 10px;
+  width: 25%;
+  background-color: #d01d65;
+}
+.decorative-orange{
+  height: 10px;
+  width: 25%;
+  background-color: #ff3c1a;
+}
+.decorative-purple{
+  height: 10px;
+  width: 25%;
+  background-color: #5c08a6;
 }
 
 .main{
@@ -84,12 +105,29 @@ div.c {
   color: white;
 } /* Red */
 .green_but {
-  background-color: #2fe29a;
+  background-color: #43e647;
   color: white;
 } /* Green */
 .yellow_but {
   background-color: #f7e359;
 } /* Yellow */
+
+.teal_but {
+  background-color: #099e6d;
+  color: white;
+} 
+.pink_but {
+  background-color: #d01d65;
+  color: white;
+} 
+.orange_but {
+  background-color: #ff3c1a;
+  color: white;
+} 
+.purple_but {
+  background-color: #5c08a6;
+  color: white;
+} 
 
 .gamebuttons {
   margin-bottom: 15px;

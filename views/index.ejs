@@ -97,6 +97,22 @@
       socket.emit('playcard', { uuid: uuid, card: playedWild, wildColour: 'yellow' });
       $("#colours").hide();
     });
+    $("#teal_but").click(function () {
+      socket.emit('playcard', { uuid: uuid, card: playedWild, wildColour: 'teal' });
+      $("#darkcolours").hide();
+    });
+    $("#purple_but").click(function () {
+      socket.emit('playcard', { uuid: uuid, card: playedWild, wildColour: 'purple' });
+      $("#darkcolours").hide();
+    });
+    $("#pink_but").click(function () {
+      socket.emit('playcard', { uuid: uuid, card: playedWild, wildColour: 'pink' });
+      $("#darkcolours").hide();
+    });
+    $("#orange_but").click(function () {
+      socket.emit('playcard', { uuid: uuid, card: playedWild, wildColour: 'orange' });
+      $("#darkcolours").hide();
+    });
 
     //name change
     $("#playerName").change(function () {
@@ -108,6 +124,7 @@
     socket.on('state', data => {
       let discardTop = data.discardTop;
       let pileCount = data.pileCount;
+      let dark = data.dark;
       let discardCount = data.discardCount;
       let slapdownCount = data.slapdownCount;
       let drawAmount = data.drawAmount;
@@ -118,6 +135,8 @@
       let resetEnabled = data.resetEnabled;
       let challengeEnabled = data.challengeEnabled;
       let drawEnabled = data.drawEnabled;
+      let darkdraw = data.darkdraw;
+      let newWild = data.newWild;
       let currentColour = data.currentColour;
       let reverseDirection = data.reverseDirection;
       let playerdata = data.playerdata;
@@ -160,6 +179,15 @@
           });
         $("#pickup").append(card);
       };
+	  
+	  if (dark) {
+        $("#colourstwo").hide();
+        $("#darkcolourstwo").show();
+	  
+	  } else {
+        $("#colourstwo").show();
+        $("#darkcolourstwo").hide();
+	  }
 
       //show challenge buttons
       if (challengeEnabled && (playerNext == $("#playerName").val())) {
@@ -215,7 +243,7 @@
           $("#uno2_but").hide();
         }
         //show drawCard buttons
-        if (drawEnabled && (playerNext == $("#playerName").val())) {
+        if (drawEnabled && (!darkdraw) && (playerNext == $("#playerName").val())) {
           $("#drawCard").show();
           $("#drawCardtext").show();
           $("#pick_but").hide();
@@ -279,6 +307,21 @@
         playedWild = 'deal';
         $("#colours").show();
       }
+	  
+	  
+	  //check if flip revealed a wild
+      if (playerNext == $("#playerName").val() && (discardTop.includes('wild_colora') || discardTop.includes('wild_pick_four'))&& newWild) {
+
+        playedWild = 'newWild';
+        $("#colours").show();
+      }
+	  
+	  if (playerNext == $("#playerName").val() && (discardTop.includes('wild_dark'))&& newWild) {
+
+        playedWild = 'newWild';
+        $("#darkcolours").show();
+      }
+	  
 
       for (let i = 0; i < playerCount; i++) {
         if ($("#playerName").val() == playerdata[i].name) {
@@ -393,9 +436,19 @@
       $("#colours").show();
     });
 	
+    socket.on('rechoosedarkColour', () => {
+      playedWild = 'challenge';
+      $("#darkcolours").show();
+    });
+	
     socket.on('newchooseColour', () => {
       playedWild = 'colourchoice';	
       $("#colours").show();
+    });	
+	
+    socket.on('newchoosedarkColour', () => {
+      playedWild = 'darkcolourchoice';	
+      $("#darkcolours").show();
     });
 
     //player status is sent to a socket named as the player's uuid
@@ -449,13 +502,19 @@
 <body>
   <div class='titleblock z-depth-3'>
     <div class='title'>
-      UNO Game
+      UNO Flip!
     </div>
-    <div style="display:flex;">
+    <div hidden="true" id="colourstwo" style="display:flex;">
       <div class='decorative-red'></div>
       <div class='decorative-green'></div>
       <div class='decorative-blue'></div>
       <div class='decorative-yellow'></div>
+    </div>
+    <div hidden="true" id="darkcolourstwo" style="display:flex;">
+      <div class='decorative-teal'></div>
+      <div class='decorative-pink'></div>
+      <div class='decorative-orange'></div>
+      <div class='decorative-purple'></div>
     </div>
   </div>
   <div class='main'>
@@ -518,10 +577,16 @@
       </div>
     </div>
     <div hidden="true" id="colours">
-      <button class="btn blue_but" id="blue_but">Blue</button>
-      <button class="btn green_but" id="green_but">Green</button>
       <button class="btn red_but" id="red_but">Red</button>
+      <button class="btn green_but" id="green_but">Green</button>
+      <button class="btn blue_but" id="blue_but">Blue</button>
       <button class="btn yellow_but" id="yellow_but">Yellow</button>
+    </div>
+    <div hidden="true" id="darkcolours">
+      <button class="btn teal_but" id="teal_but">Teal</button>
+      <button class="btn pink_but" id="pink_but">Pink</button>
+      <button class="btn orange_but" id="orange_but">Orange</button>
+      <button class="btn purple_but" id="purple_but">Purple</button>
     </div>
     <div hidden="true" id="challenge">
       <button class="btn" id="challenge_but">Challenge</button>
