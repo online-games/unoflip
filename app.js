@@ -174,16 +174,6 @@ io.on('connection', function (socket) {
       updateState();
 	  
     }
-	 let pickupCard = pile.pop();
-      players[turn].hand.push(pickupCard);
-      updateState();
-	 //pile.pop();
-	 
-	   //add card to discard
- // discard.push(card);
-  //remove from hand
- // players[playerIndex].hand = players[playerIndex].hand.filter((item) => { return item !== card });
-  
   
 	 	
   });
