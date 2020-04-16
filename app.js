@@ -176,9 +176,6 @@ io.on('connection', function (socket) {
 	  
     }
   
-	 let pickupCard = pile.pop();
-		players[turn].hand.push(pickupCard);
-		updateState();
 		
 		
   });
