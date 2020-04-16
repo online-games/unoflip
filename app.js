@@ -364,10 +364,10 @@ io.on('connection', function (socket) {
       updateState();
     } else {
 
-      if (clickPolice(uuid)) {
-        message(`${uuidToName(uuid)} - has been clicking too rapidly and has been temporarily throttled`);
-        return;
-      }
+      //if (clickPolice(uuid)) {
+      //  message(`${uuidToName(uuid)} - has been clicking too rapidly and has been temporarily throttled`);
+      //  return;
+      //}
 	  if (card.includes('wild')) {
         message(`${uuidToName(uuid)} - played a wild and is choosing a colour`);
 		
