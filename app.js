@@ -66,6 +66,7 @@ var reverseDirection = false;
 var dealer = 0;
 var inProgress = false;
 var roundOver = false;
+var roundWinner = null;
 var darkdraw = false;
 var darkdrawcolour = '';
 var challengeEnabled = false;
@@ -175,7 +176,11 @@ io.on('connection', function (socket) {
 	  
     }
   
-	 	
+	 let pickupCard = pile.pop();
+		players[turn].hand.push(pickupCard);
+		updateState();
+		
+		
   });
   socket.on('catch', function (data) {
     console.log(data);
@@ -268,6 +273,7 @@ io.on('connection', function (socket) {
       challengeEnabled = false;
       darkdraw = false;
 	  darkdrawcolour = '';
+      playedCard = '';
       reverseCard = false;
 	  slapdownCard = false;
       skip = false;
@@ -296,7 +302,8 @@ io.on('connection', function (socket) {
         playerdata[turn].uno = false;
         playerdata[turn].unotime = null;
         reverseCard = false;
-	    slapdownCard = false;
+		playedCard = '';	  
+    	slapdownCard = false;
 		killmessage = '';
 		endmessage = '';
         skip = false;
@@ -343,6 +350,8 @@ io.on('connection', function (socket) {
 		
     
     if (card == 'challenge' || card == 'deal' || card == 'newWild') {
+		
+		message(` THE CARD ${card} `)
 	  wildColour = data.wildColour;
       message(`${uuidToName(uuid)} - Wild colour has been set to ${wildColour}`)
       //is this called?
@@ -413,8 +422,9 @@ io.on('connection', function (socket) {
 					checkPile();
 				  }
 							  
-				  checkWin(playerIndex, card, false);
+				  checkWin(roundWinner, playedCard, false);
 				  roundOver = false;
+				  roundWinner = null;
 			  }
 				  
 			  
@@ -426,8 +436,8 @@ io.on('connection', function (socket) {
 		  
 		  
 		if (inProgress) { 
-				
-			playedCard = '';
+		
+					
 			nextTurn();
 			updateState();
 
@@ -454,26 +464,28 @@ io.on('connection', function (socket) {
     if (invalid) {
       //play was invalid
       message(`challenge succeeded`);
-      players[previousPlayerIndex].hand.push(pile.pop());
-      checkPile();
-      players[previousPlayerIndex].hand.push(pile.pop());
-      checkPile();
       if (discard.slice(-1).pop().includes('wild_pick')) {
         players[previousPlayerIndex].hand.push(pile.pop());
         checkPile();
         players[previousPlayerIndex].hand.push(pile.pop());
         checkPile();
-        playerdata[previousPlayerIndex].uno = false;
-        playerdata[previousPlayerIndex].unotime = null;
+		message(`${playerdata[previousPlayerIndex].name} - had to pick up 2 cards`);
 	  }	else if (discard.slice(-1).pop().includes('wild_dark_pick')) {
 		for(let cardIndex = 0; cardIndex < drawAmount; cardIndex++)
 		{
-			players[turn].hand.push(pile.pop());
+			players[previousPlayerIndex].hand.push(pile.pop());
 			checkPile();
         }
-		playerdata[turn].uno = false;
-        playerdata[turn].unotime = null;
-      }
+		message(`${playerdata[previousPlayerIndex].name} - had to pick up ${drawAmount} cards`);
+      } else {
+		  players[previousPlayerIndex].hand.push(pile.pop());
+		  checkPile();
+		  players[previousPlayerIndex].hand.push(pile.pop());
+		  checkPile();	
+		  message(`${playerdata[previousPlayerIndex].name} - had to pick up 2 cards`);	  
+	  }
+	  playerdata[previousPlayerIndex].uno = false;
+      playerdata[previousPlayerIndex].unotime = null;
 
       //this player now chooses the colour
 	  if(playedCard.includes('wild_dark')) {
@@ -484,35 +496,46 @@ io.on('connection', function (socket) {
 	  
     } else {
       message(`challenge failed`);
-      players[turn].hand.push(pile.pop());
-      checkPile();
-      players[turn].hand.push(pile.pop());
-      checkPile();
       if (discard.slice(-1).pop().includes('wild_dark_pick')) {
         for(let cardIndex = 0; cardIndex < drawAmount; cardIndex++)
 		{
 			players[turn].hand.push(pile.pop());
 			checkPile();
         }
-		playerdata[turn].uno = false;
-        playerdata[turn].unotime = null;
+        players[turn].hand.push(pile.pop());
+        checkPile();
+        players[turn].hand.push(pile.pop());
+        checkPile();
+		message(`${playerdata[turn].name} - had to pick up ${(drawAmount + 2)} cards`);
       }
       else if (discard.slice(-1).pop().includes('wild_pick')) {
         players[turn].hand.push(pile.pop());
         checkPile();
         players[turn].hand.push(pile.pop());
         checkPile();
-        playerdata[turn].uno = false;
-        playerdata[turn].unotime = null;
+        players[turn].hand.push(pile.pop());
+        checkPile();
+        players[turn].hand.push(pile.pop());
+        checkPile();
+		message(`${playerdata[turn].name} - had to pick up 4 cards`);
+	  } else {
+		  players[turn].hand.push(pile.pop());
+		  checkPile();
+		  players[turn].hand.push(pile.pop());
+		  checkPile();
+		  message(`${playerdata[turn].name} - had to pick up 2 cards`);
       }
+      playerdata[turn].uno = false;
+      playerdata[turn].unotime = null;
+	  
 
     }
     challengeEnabled = false;
     darkdraw = false;
 	darkdrawcolour = '';
     drawAmount = 0;
-    drawEnabled = false;
 	playedCard = '';
+    drawEnabled = false;
     dontWaitUp = null;
     dontWaitUpCard = '';
     playerdata[turn].cardsInHand = players[turn].hand.length;
@@ -633,6 +656,7 @@ function deal() {
   message(`After the next turn has been taken, you can be caught`);
   message(`Failure to say Uno before the next turn is taken will leave you vulnerable`);
   message(`When you have one card left you must say Uno!`);
+  message(`You can't end the round on a wild card!`);
   message(`-----------`);
   message(`End Game`);
   message(` `);
@@ -694,9 +718,9 @@ function deal() {
     // Choose colour
   }
 
-  //draw two
+  //draw one
   if (topCard.includes('picker')) {
-    drawAmount = drawAmount + 2;
+    drawAmount = 1;
     drawEnabled = true;
   }
 
@@ -834,10 +858,17 @@ function updateState() {
 				let discardTop = discard.slice(-1).pop() || ' ';
 				if (discardTop != ' ') {
 				  if (discardTop.includes('wild')) {
-					  if((currentColour == '') || (currentColour == ' ') || (playedCard != '')) {
+					  if((currentColour == '') || (currentColour == ' ') || ((playedCard != '') && (!challengeEnabled))) {
 						playerdata[playerindex].status = 'Your Turn! Choose a colour!'; 
 					  } else {
-						playerdata[playerindex].status = 'Your Turn! Colour is ' + currentColour + '!';
+						  if(challengeEnabled)
+						  {
+								playerdata[playerindex].status = 'Your Turn! Colour is ' + currentColour + '! You can challenge.';	
+							  
+						  } else 
+						  {
+								playerdata[playerindex].status = 'Your Turn! Colour is ' + currentColour + '!';							  
+						  }
 					  }
 				  }
 				}
@@ -884,7 +915,7 @@ function updateState() {
 					let discardTop = discard.slice(-1).pop() || ' ';
 					if (discardTop != ' ') {
 					  if (discardTop.includes('wild')) {
-						if((currentColour == '') || (currentColour == ' ') || (playedCard != '')) {
+						if((currentColour == '') || (currentColour == ' ') || ((playedCard != '') && (!challengeEnabled))) {
 							playerdata[playerindex].status = playerdata[turn].name + ' is choosing a colour!';							
 						} else {
 							playerdata[playerindex].status = 'Colour is ' + currentColour + '!';
@@ -1018,6 +1049,11 @@ function playCard(card, uuid, wildColour = null, socket) {
     return false;
   }
   
+  if ((card.includes('wild')) && ((players[playerIndex].hand.length == 1))) {
+	  message(`Can't go out on a wild`);
+	  return false;
+  }
+  
   let newcard = cardswap(card);
   turn = playerIndex;
   dontWaitUp = null;
@@ -1134,13 +1170,13 @@ function checkWin(playerIndex, card, beforeChoice) {
 	} else if ((card.includes('wild_dark_pick')) && beforeChoice) {
 		//TODO
 		drawAmount = 0;
-		drawEnabled = true;
 		roundOver = true;
+		roundWinner = playerIndex;
 		updateState();
 		return true;
 	}
 	  
-    message(`${uuidToName(uuid)} won the round`);
+    message(`${playerdata[playerIndex].name} won the round`);
     //if there are cards to draw, draw them for the next player
     if (drawEnabled) {
       let drawIndex = nextPlayer(turn, reverseDirection);
@@ -1265,8 +1301,10 @@ function updateScore() {
       if (card.includes('picker')) scoreInHand += 20;
       if (card.includes('reverse')) scoreInHand += 20;
       if (card.includes('skip')) scoreInHand += 20;
+      if (card.includes('flip')) scoreInHand += 20;
       if (card.includes('colora')) scoreInHand += 50;
       if (card.includes('pick_four')) scoreInHand += 50;
+      if (card.includes('pick_colour')) scoreInHand += 50;
     });
     playerdata[thisPlayer].score = playerdata[thisPlayer].score + scoreInHand;
     playerdata[thisPlayer].lastRound = scoreInHand;
@@ -1338,12 +1376,14 @@ function reset() {
   turn = 0;
   dontWaitUp = null;
   dontWaitUpCard = '';
+  newWild = false;
   reverseDirection = false;
   dealer = 0;
   inProgress = false;
   challengeEnabled = false;
   darkdraw = false;
   darkdrawcolour = '';
+  playedCard = '';
   drawEnabled = false;
   slapdownCounter = 0;
   drawAmount = 0;
@@ -1584,7 +1624,7 @@ function cardswap(card){
 	else if(card.includes('./dark/purple_skip_large - Copy.png')) newcard = './cards/blue_1_large - Copy.png';
 	else if(card.includes('./dark/purple_skip_large - First.png')) newcard = './cards/blue_1_large - First.png';
 	else if(card.includes('./dark/pink_6_large - First.png')) newcard = './cards/blue_2_large - Copy.png';
-	else if(card.includes('./dark/orange_8_large - First.png')) newcard = './cards/./cards/blue_2_large - First.png';
+	else if(card.includes('./dark/orange_8_large - First.png')) newcard = './cards/blue_2_large - First.png';
 	else if(card.includes('./dark/purple_8_large - Copy.png')) newcard = './cards/blue_3_large - Copy.png';
 	else if(card.includes('./dark/teal_2_large - First.png')) newcard = './cards/blue_3_large - First.png';
 	else if(card.includes('./dark/purple_1_large - First.png')) newcard = './cards/blue_4_large - Copy.png';
