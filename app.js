@@ -1492,7 +1492,7 @@ function flip(){
 	
 	for(let playerIndex = 0; playerIndex < players.length; playerIndex++)
 	{
-		players[playerIndex].hand.sort();
+		//players[playerIndex].hand.sort();
 	}
 	
 	let discardTop = discard.slice(-1).pop();
